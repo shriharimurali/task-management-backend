@@ -1,10 +1,11 @@
-const router = require("express").Router();
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
+const router = require('express').Router();
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
-const User = require("../../model/user");
+const User = require('../../model/user');
 
-const Yup = require("yup");
+const Yup = require('yup');
+const authenticateToken = require('../../middleware/authenticateToken');
 
 const registerSchema = Yup.object({
   fname: Yup.string().min(3).required(),
@@ -15,12 +16,12 @@ const registerSchema = Yup.object({
 
 // Register Route
 
-router.post("/register", async (req, res) => {
+router.post('/register', async (req, res) => {
   const { fname, lname, email, password } = req.body;
   const emailExist = await User.findOne({ email });
 
   if (emailExist) {
-    return res.status(400).send("Email already exists.");
+    return res.status(400).send('Email already exists.');
   }
 
   const salt = await bcrypt.genSaltSync(10);
@@ -38,9 +39,8 @@ router.post("/register", async (req, res) => {
     if (error) return res.status(400).send(error.details[0].message);
 
     await user.save();
-    return res.status(200).send("User create successfully!.");
+    return res.status(200).send('User create successfully!.');
   } catch (error) {
-    console.log(error);
     res.status(500).send(error);
   }
 });
@@ -52,19 +52,19 @@ const loginSchema = Yup.object({
 
 // Login Route
 
-router.post("/login", async (req, res) => {
+router.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
   const user = await User.findOne({ email });
 
   if (!user) {
-    return res.status(400).send("User do not exists. Please Sign up");
+    return res.status(400).send('User do not exists. Please Sign up');
   }
 
   const validPassword = await bcrypt.compare(password, user.password);
 
   if (!validPassword) {
-    return res.status(400).send("Invalid Password");
+    return res.status(400).send('Invalid Password');
   }
 
   try {
@@ -76,7 +76,6 @@ router.post("/login", async (req, res) => {
 
     res.json({ accessToken, refreshToken, user: { ...getBasicDetails(user) } });
   } catch (error) {
-    console.log({ error });
     res.status(500).send(error);
   }
 });
@@ -86,11 +85,12 @@ function getBasicDetails(user) {
   return { id, fname, lname, email };
 }
 
-router.post("/refresh", (req, res) => {
+router.post('/refresh', (req, res) => {
   const refreshToken = req.body.refreshToken;
-  if (refreshToken == null) return res.sendStatus(401, "Unauthorized!");
+
+  if (refreshToken == null) return res.sendStatus(401, 'Unauthorized!');
   jwt.verify(refreshToken, process.env.JWT_REFRESH_KEY, (err, user) => {
-    if (err) return res.sendStatus(403).send(err);
+    if (err) return res.sendStatus(401).send(err);
     const accessToken = generateAccessToken({ id: user.id });
     const refreshToken = generateRefreshToken({ id: user.id });
     res.json({ accessToken, refreshToken });
@@ -100,13 +100,27 @@ router.post("/refresh", (req, res) => {
 function generateAccessToken(user) {
   return jwt.sign({ id: user.id }, process.env.JWT_KEY, {
     expiresIn: process.env.EXPIRES_IN,
+    algorithm: process.env.ALGO_CONFIG,
   });
 }
 
 function generateRefreshToken(user) {
   return jwt.sign({ id: user.id }, process.env.JWT_REFRESH_KEY, {
     expiresIn: process.env.REFRESH_EXPIRES_IN,
+    algorithm: process.env.ALGO_CONFIG,
   });
 }
+
+router.get('/userInfo', async (req, res) => {
+  const token = req.headers.authorization;
+
+  if (token) {
+    const decoded = jwt.decode(token?.split(' ')[1]);
+    const user = await User.findOne({ _id: decoded.id });
+    res.json({ fname: user.fname, lname: user.lname, email: user.email });
+  } else {
+    res.status(401).send('Unauthorized!');
+  }
+});
 
 module.exports = router;
