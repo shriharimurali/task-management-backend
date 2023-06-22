@@ -37,10 +37,11 @@ router.post('/register', async (req, res) => {
   try {
     const { error } = await registerSchema.validateSync(req.body);
     if (error) return res.status(400).send(error.details[0].message);
-
     await user.save();
-    return res.status(200).send('User create successfully!.');
+
+    return res.json({ user: { ...getBasicDetails(req.body) } });
   } catch (error) {
+    console.log(error);
     res.status(500).send(error);
   }
 });
